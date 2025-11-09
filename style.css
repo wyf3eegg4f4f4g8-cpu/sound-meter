@@ -75,6 +75,12 @@ h1 {
 }
 
 /* Цвета круглого индикатора */
+.indicator-circle.purple {
+    background: linear-gradient(135deg, #9C27B0, #7B1FA2);
+    border-color: #4A148C;
+    box-shadow: 0 8px 25px rgba(156, 39, 176, 0.4);
+}
+
 .indicator-circle.blue {
     background: linear-gradient(135deg, #2196F3, #1976D2);
     border-color: #0D47A1;
@@ -202,6 +208,10 @@ h1 {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+.purple-dot {
+    background: linear-gradient(135deg, #9C27B0, #7B1FA2);
+}
+
 .blue-dot {
     background: linear-gradient(135deg, #2196F3, #1976D2);
 }
@@ -216,6 +226,12 @@ h1 {
 
 .red-dot {
     background: linear-gradient(135deg, #f44336, #d32f2f);
+}
+
+.scale-item.purple {
+    background: #F3E5F5;
+    color: #7B1FA2;
+    border: 2px solid #9C27B0;
 }
 
 .scale-item.blue {

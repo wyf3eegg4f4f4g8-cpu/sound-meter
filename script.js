@@ -164,7 +164,7 @@ class SoundMonitor {
     updateVolumeDisplay(db) {
         this.volumeValue.textContent = db;
         
-        // Обновленные уровни громкости с очень шумно от 70+ dB
+        // Обновленные уровни громкости с фиолетовым для "очень тихо"
         if (db >= 70) {
             this.setIndicatorState('red', `ОЧЕНЬ ШУМНО`, "Очень шумно", db);
         } else if (db >= 55) {
@@ -174,7 +174,7 @@ class SoundMonitor {
         } else if (db >= 25) {
             this.setIndicatorState('blue', `ТИХО`, "Тихо", db);
         } else {
-            this.setIndicatorState('blue', `ОЧЕНЬ ТИХО`, "Очень тихо", db);
+            this.setIndicatorState('purple', `ОЧЕНЬ ТИХО`, "Очень тихо", db);
         }
     }
     setIndicatorState(color, text, level, db) {
