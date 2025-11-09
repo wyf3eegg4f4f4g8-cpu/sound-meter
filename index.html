@@ -3,17 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sound Meter - Измеритель громкости звука</title>
+    <title>Звуковой светофор</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
-        <h1>Sound Meter - Измеритель громкости звука</h1>
+        <h1>Звуковой светофор</h1>
         
-        <!-- Индикатор громкости -->
+        <!-- Круглый индикатор громкости -->
         <div class="indicator-container">
-            <div id="volumeIndicator" class="indicator">
-                <span id="statusText">Нажмите "Начать измерение"</span>
+            <div id="volumeIndicator" class="indicator-circle">
+                <div class="circle-inner">
+                    <span id="statusText">Нажмите "Начать измерение"</span>
+                </div>
             </div>
         </div>
 
@@ -30,13 +32,28 @@
         </div>
 
         <!-- Шкала громкости -->
-        <div class="volume-scale">
-            <div class="scale-item blue">0-25 dB: Едва слышно</div>
-            <div class="scale-item green">25-50 dB: Ощутимо слышно</div>
-            <div class="scale-item orange">50-60 dB: Шумно</div>
-            <div class="scale-item red">60+ dB: Очень шумно</div>
-        </div>
-
+<div class="volume-scale">
+    <div class="scale-item blue">
+        <div class="color-dot blue-dot"></div>
+        <span>0-25 dB: Очень тихо</span>
+    </div>
+    <div class="scale-item blue">
+        <div class="color-dot blue-dot"></div>
+        <span>25-40 dB: Тихо</span>
+    </div>
+    <div class="scale-item green">
+        <div class="color-dot green-dot"></div>
+        <span>40-55 dB: Нормально</span>
+    </div>
+    <div class="scale-item orange">
+        <div class="color-dot orange-dot"></div>
+        <span>55-70 dB: Шумно</span>
+    </div>
+    <div class="scale-item red">
+        <div class="color-dot red-dot"></div>
+        <span>70+ dB: Очень шумно</span>
+    </div>
+</div>
         <!-- Инструкция -->
         <div class="instructions">
             <h3>Как пользоваться:</h3>
@@ -44,7 +61,8 @@
                 <li>Нажмите "Начать измерение"</li>
                 <li>Разрешите доступ к микрофону</li>
                 <li>Говорите в микрофон или создайте шум</li>
-                <li>Следите за индикатором и уровнем громкости</li>
+                <li>Следите за цветом круга и уровнем громкости</li>
+                <li>Цвет круга меняется в зависимости от громкости</li>
             </ol>
         </div>
     </div>
