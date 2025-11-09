@@ -5,13 +5,14 @@ class SoundMonitor {
         this.microphone = null;
         this.isMonitoring = false;
         this.animationId = null;
-        this.calibrationOffset = 0; // Для калибровки микрофона
+        this.dataArray = null;
+        this.volumeHistory = [];
+        this.historySize = 10;
         
         console.log("Инициализация измерителя громкости...");
         
         this.initializeElements();
         this.setupEventListeners();
-        this.calibrateMicrophone();
     }
 
     initializeElements() {
@@ -35,39 +36,36 @@ class SoundMonitor {
         });
     }
 
-    // Калибровка для разных микрофонов
-    calibrateMicrophone() {
-        // Базовая калибровка - можно настроить под ваш микрофон
-        this.calibrationOffset = 25; // Смещение для получения реалистичных значений
-    }
-
     async startMonitoring() {
         try {
             console.log("Запрос доступа к микрофону...");
             
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: false,
+                    echoCancellation: false,  // Отключаем для более точных измерений
+                    noiseSuppression: false,  // Отключаем шумоподавление
+                    autoGainControl: false,   // Отключаем автоусиление
                     sampleRate: 44100,
-                    channelCount: 1
+                    channelCount: 1,
+                    volume: 1.0
                 },
                 video: false
             });
             
             console.log("Доступ к микрофону получен!");
             
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                sampleRate: 44100
-            });
+            // Создаем аудиоконтекст
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             
+            // Создаем анализатор
             this.analyser = this.audioContext.createAnalyser();
-            this.analyser.fftSize = 1024; // Уменьшено для лучшей производительности
-            this.analyser.smoothingTimeConstant = 0.5; // Меньше сглаживания для быстрого отклика
-            this.analyser.minDecibels = -90;
-            this.analyser.maxDecibels = -10;
+            this.analyser.fftSize = 2048;  // Увеличиваем для большей точности
+            this.analyser.smoothingTimeConstant = 0.2;  // Меньше сглаживания
             
+            // Создаем массив для данных
+            this.dataArray = new Float32Array(this.analyser.fftSize);
+            
+            // Подключаем микрофон
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             this.microphone.connect(this.analyser);
             
@@ -87,6 +85,7 @@ class SoundMonitor {
         console.log("Останавливаем измерение...");
         
         this.isMonitoring = false;
+        this.volumeHistory = [];
         
         if (this.animationId) {
             cancelAnimationFrame(this.animationId);
@@ -114,25 +113,25 @@ class SoundMonitor {
         if (!this.isMonitoring) return;
 
         try {
-            const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-            this.analyser.getByteFrequencyData(dataArray);
+            // Получаем данные в формате Float32Array для большей точности
+            this.analyser.getFloatTimeDomainData(this.dataArray);
             
-            // Вычисляем среднее значение с учетом только значимых частот
-            let sum = 0;
-            let count = 0;
+            // Вычисляем RMS (среднеквадратичное значение)
+            const rms = this.calculateRMS(this.dataArray);
             
-            // Анализируем средние частоты (игнорируем очень низкие и высокие)
-            for (let i = 10; i < dataArray.length - 10; i++) {
-                sum += dataArray[i];
-                count++;
+            // Преобразуем в децибелы
+            const db = this.rmsToDB(rms);
+            
+            // Добавляем в историю для сглаживания
+            this.volumeHistory.push(db);
+            if (this.volumeHistory.length > this.historySize) {
+                this.volumeHistory.shift();
             }
             
-            const average = count > 0 ? sum / count : 0;
+            // Вычисляем среднее значение для сглаживания
+            const smoothedDB = this.getSmoothedVolume();
             
-            // Правильное преобразование в dB с калибровкой
-            const db = this.convertToRealisticDB(average);
-            
-            this.updateVolumeDisplay(db);
+            this.updateVolumeDisplay(smoothedDB);
             
             this.animationId = requestAnimationFrame(() => this.monitorVolume());
             
@@ -142,45 +141,62 @@ class SoundMonitor {
         }
     }
 
-    convertToRealisticDB(value) {
-        if (value <= 1) return 0; // Тишина
+    // Вычисление среднеквадратичного значения
+    calculateRMS(data) {
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+            sum += data[i] * data[i];
+        }
+        return Math.sqrt(sum / data.length);
+    }
+
+    // Преобразование RMS в децибелы
+    rmsToDB(rms) {
+        if (rms < 0.0001) return 0; // Практически тишина
         
-        // Правильная формула преобразования в dB
-        // Значение от 0 до 255 преобразуем в реалистичный диапазон dB
-        const normalized = value / 255;
+        // Преобразование в dBFS (децибелы относительно полной шкалы)
+        let db = 20 * Math.log10(rms);
         
-        // Логарифмическое преобразование (основная формула для dB)
-        let db = 20 * Math.log10(normalized);
+        // Нормализация к реалистичному диапазону
+        // Типичные значения: тишина ~30dB, разговор ~60dB, крик ~80dB
+        db = db + 100; // Смещение
         
-        // Калибровка для получения реалистичных значений
-        // Типичный диапазон: тишина ~20 dB, разговор ~60 dB, крик ~80 dB
-        db = db + 100 + this.calibrationOffset; // Смещение для реалистичных значений
-        
-        // Ограничиваем диапазон
+        // Ограничение диапазона
         db = Math.max(0, Math.min(120, db));
         
         return Math.round(db);
     }
 
+    // Сглаживание значений для устранения скачков
+    getSmoothedVolume() {
+        if (this.volumeHistory.length === 0) return 0;
+        
+        let sum = 0;
+        for (let i = 0; i < this.volumeHistory.length; i++) {
+            sum += this.volumeHistory[i];
+        }
+        return Math.round(sum / this.volumeHistory.length);
+    }
+
     updateVolumeDisplay(db) {
         this.volumeValue.textContent = db;
         
-        // Правильные уровни громкости
+        // Обновленные уровни громкости с реалистичными значениями
         if (db >= 60) {
-            // 60+ dB: Очень шумно
+            // 60+ dB: Очень шумно (крик, строительные работы)
             this.setIndicatorState('red', `ОЧЕНЬ ШУМНО: ${db} dB`, "Очень шумно");
         } else if (db >= 50) {
-            // 50-60 dB: Шумно
+            // 50-60 dB: Шумно (громкий разговор, телевизор)
             this.setIndicatorState('orange', `ШУМНО: ${db} dB`, "Шумно");
-        } else if (db >= 25) {
-            // 25-50 dB: Ощутимо слышно
+        } else if (db >= 35) {
+            // 35-50 dB: Ощутимо слышно (обычный разговор)
             this.setIndicatorState('green', `ОЩУТИМО СЛЫШНО: ${db} dB`, "Ощутимо слышно");
-        } else if (db >= 10) {
-            // 10-25 dB: Едва слышно
+        } else if (db >= 20) {
+            // 20-35 dB: Едва слышно (шепот, тиканье часов)
             this.setIndicatorState('blue', `ЕДВА СЛЫШНО: ${db} dB`, "Едва слышно");
         } else {
-            // 0-10 dB: Практически бесшумно
-            this.setIndicatorState('blue', `ПРАКТИЧЕСКИ БЕСШУМНО: ${db} dB`, "Бесшумно");
+            // 0-20 dB: Практически бесшумно (тихая комната)
+            this.setIndicatorState('blue', `БЕСШУМНО: ${db} dB`, "Бесшумно");
         }
     }
 
@@ -228,19 +244,20 @@ class SoundMonitor {
         this.statusText.textContent = `${errorMessage}`;
         this.volumeIndicator.className = 'indicator red';
         
-        setTimeout(() => {alert(`Проблема с доступом к микрофону:\n\n${errorMessage}`);
-    }, 500);
-}
+        setTimeout(() => {
+            alert(`Проблема с доступом к микрофону:\n\n${errorMessage}`);
+        }, 500);
+    }
 }
 
 // Запуск приложения
 document.addEventListener('DOMContentLoaded', () => {
-console.log("Запуск Sound Meter...");
-
-try {
-    window.soundMonitor = new SoundMonitor();
-    console.log("Sound Meter успешно запущен");
-} catch (error) {
-    console.error('Ошибка при запуске:', error);
-}
+    console.log("Запуск Sound Meter...");
+    
+    try {
+        window.soundMonitor = new SoundMonitor();
+        console.log("Sound Meter успешно запущен");
+    } catch (error) {
+        console.error('Ошибка при запуске:', error);
+    }
 });
