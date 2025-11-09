@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sound Meter - Измеритель громкости звука</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Sound Meter - Измеритель громкости звука</h1>
+        
+        <!-- Индикатор громкости -->
+        <div class="indicator-container">
+            <div id="volumeIndicator" class="indicator">
+                <span id="statusText">Нажмите "Начать измерение"</span>
+            </div>
+        </div>
+
+        <!-- Кнопки управления -->
+        <div class="controls">
+            <button id="startBtn" class="btn">Начать измерение</button>
+            <button id="stopBtn" class="btn" disabled>Остановить</button>
+        </div>
+
+        <!-- Информация о громкости -->
+        <div class="info">
+            <p>Текущая громкость: <span id="volumeValue">0</span> dB</p>
+            <p>Уровень громкости: <span id="levelText">-</span></p>
+        </div>
+
+        <!-- Шкала громкости -->
+        <div class="volume-scale">
+            <div class="scale-item blue">0-25 dB: Едва слышно</div>
+            <div class="scale-item green">25-50 dB: Ощутимо слышно</div>
+            <div class="scale-item orange">50-60 dB: Шумно</div>
+            <div class="scale-item red">60+ dB: Очень шумно</div>
+        </div>
+
+        <!-- Инструкция -->
+        <div class="instructions">
+            <h3>Как пользоваться:</h3>
+            <ol>
+                <li>Нажмите "Начать измерение"</li>
+                <li>Разрешите доступ к микрофону</li>
+                <li>Говорите в микрофон или создайте шум</li>
+                <li>Следите за индикатором и уровнем громкости</li>
+            </ol>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
