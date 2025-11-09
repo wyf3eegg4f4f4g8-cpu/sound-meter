@@ -164,14 +164,14 @@ class SoundMonitor {
     updateVolumeDisplay(db) {
         this.volumeValue.textContent = db;
         
-        // Обновленные уровни громкости с фиолетовым для "очень тихо"
+        // Обновленные уровни громкости по новым требованиям
         if (db >= 70) {
-            this.setIndicatorState('red', `ОЧЕНЬ ШУМНО`, "Очень шумно", db);
-        } else if (db >= 55) {
+            this.setIndicatorState('red', `КРАЙНЕ ШУМНО`, "Крайне шумно", db);
+        } else if (db >= 50) {
             this.setIndicatorState('orange', `ШУМНО`, "Шумно", db);
-        } else if (db >= 40) {
-            this.setIndicatorState('green', `НОРМАЛЬНО`, "Нормально", db);
-        } else if (db >= 25) {
+        } else if (db >= 35) {
+            this.setIndicatorState('green', `ОЩУТИМО СЛЫШНО`, "Ощутимо слышно", db);
+        } else if (db >= 15) {
             this.setIndicatorState('blue', `ТИХО`, "Тихо", db);
         } else {
             this.setIndicatorState('purple', `ОЧЕНЬ ТИХО`, "Очень тихо", db);
