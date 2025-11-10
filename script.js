@@ -9,10 +9,10 @@ class SoundMonitor {
         this.volumeHistory = [];
         this.historySize = 15;
         
-        // Улучшенная калибровка для реалистичных значений
+        // Более мягкая калибровка
         this.calibration = {
-            offset: 35,      // Увеличено для коррекции заниженных значений
-            multiplier: 1.3, // Оптимизированный множитель
+            offset: 25,      // Вернули нормальное значение
+            multiplier: 1.2, // Небольшой множитель
             minDB: 0,
             maxDB: 100
         };
@@ -50,8 +50,8 @@ class SoundMonitor {
             
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
+                    echoCancellation: true,
+                    noiseSuppression: true,
                     autoGainControl: false,
                     sampleRate: 44100,
                     channelCount: 1
@@ -63,14 +63,14 @@ class SoundMonitor {
             
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             
-            // Оптимальные настройки для точного измерения
+            // Стандартные настройки для стабильной работы
             this.analyser = this.audioContext.createAnalyser();
-            this.analyser.fftSize = 2048;
-            this.analyser.smoothingTimeConstant = 0.2; // Минимальное сглаживание для быстрого отклика
-            this.analyser.minDecibels = -60;           // Расширенный диапазон
-            this.analyser.maxDecibels = 0;
+            this.analyser.fftSize = 1024;
+            this.analyser.smoothingTimeConstant = 0.8; // Хорошее сглаживание
+            this.analyser.minDecibels = -45;
+            this.analyser.maxDecibels = -10;
             
-            this.dataArray = new Float32Array(this.analyser.fftSize);
+            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             this.microphone.connect(this.analyser);
@@ -119,22 +119,21 @@ class SoundMonitor {
         if (!this.isMonitoring) return;
 
         try {
-            // Получаем данные амплитуды
-            this.analyser.getFloatTimeDomainData(this.dataArray);
+            // Используем частотные данные для стабильности
+            this.analyser.getByteFrequencyData(this.dataArray);
+            // Простое и надежное вычисление средней громкости
+            const average = this.calculateSimpleAverage(this.dataArray);
             
-            // Вычисляем RMS с улучшенной точностью
-            const rms = this.calculateEnhancedRMS(this.dataArray);
+            // Аккуратное преобразование в dB
+            const db = this.convertToStableDB(average);
             
-            // Преобразуем в децибелы с коррекцией
-            const db = this.rmsToCalibratedDB(rms);
-            
-            // Сглаживание для плавности (без потери чувствительности)
+            // Сглаживание для плавности
             this.volumeHistory.push(db);
             if (this.volumeHistory.length > this.historySize) {
                 this.volumeHistory.shift();
             }
             
-            const smoothedDB = this.getWeightedAverage();
+            const smoothedDB = this.getSimpleAverage();
             this.updateVolumeDisplay(smoothedDB);
             
             this.animationId = requestAnimationFrame(() => this.monitorVolume());
@@ -145,58 +144,44 @@ class SoundMonitor {
         }
     }
 
-    calculateEnhancedRMS(data) {
+    calculateSimpleAverage(data) {
         let sum = 0;
-        let count = 0;
-        
-        // Анализируем только значимые части сигнала (игнорируем шумы)
         for (let i = 0; i < data.length; i++) {
-            // Учитываем только значения выше порога шума
-            if (Math.abs(data[i]) > 0.001) {
-                sum += data[i] * data[i];
-                count++;
-            }
+            sum += data[i];
         }
-        
-        return count > 0 ? Math.sqrt(sum / count) : 0;
+        return sum / data.length;
     }
 
-    rmsToCalibratedDB(rms) {
-        if (rms < 0.0001) return 0;
+    convertToStableDB(value) {
+        if (value < 1) return 0;
         
-        // Базовая формула преобразования
-        let db = 20.0 * Math.log10(rms);
+        // Простая и стабильная формула
+        let db = 20 * Math.log10(value / 255);
         
-        // Калибровка для реалистичных значений
-        // Добавляем коррекцию +10-15 dB для компенсации занижения
-        db = (db + 95) * this.calibration.multiplier + this.calibration.offset;
+        // Мягкая калибровка
+        db = db + 85 + this.calibration.offset;
         
-        // Ограничение диапазона
-        db = Math.max(this.calibration.minDB, Math.min(this.calibration.maxDB, db));
+        // Ограничение и округление
+        db = Math.max(0, Math.min(100, db));
         
         return Math.round(db);
     }
 
-    getWeightedAverage() {
+    getSimpleAverage() {
         if (this.volumeHistory.length === 0) return 0;
         
-        // Взвешенное среднее - новые значения имеют больший вес
         let sum = 0;
-        let weightSum = 0;
-        
         for (let i = 0; i < this.volumeHistory.length; i++) {
-            const weight = (i + 1) / this.volumeHistory.length; // Линейное взвешивание
-            sum += this.volumeHistory[i] * weight;
-            weightSum += weight;
+            sum += this.volumeHistory[i];
         }
         
-        return Math.round(sum / weightSum);
+        return Math.round(sum / this.volumeHistory.length);
     }
 
     updateVolumeDisplay(db) {
         this.volumeValue.textContent = db;
         
-        // Сохраняем оригинальные уровни громкости
+        // Правильные уровни громкости
         if (db >= 70) {
             this.setIndicatorState('red', `КРАЙНЕ ШУМНО`, "Крайне шумно", db);
         } else if (db >= 50) {
@@ -231,12 +216,6 @@ class SoundMonitor {
         }
     }
 
-    // Функция для точной калибровки под ваш микрофон
-    calibrateForMicrophone() {
-        // Автоматическая калибровка +12 dB для компенсации
-        this.calibration.offset += 12;
-        console.log("Автоматическая калибровка: +12 dB применено");
-    }
     handleMicrophoneError(error) {
         let errorMessage = 'Неизвестная ошибка';
         
@@ -260,26 +239,19 @@ class SoundMonitor {
         this.statusText.textContent = `${errorMessage}`;
         this.volumeIndicator.className = 'indicator-circle red';
         
-        setTimeout(() => {
-            alert(`Проблема с доступом к микрофону:\n\n${errorMessage}`);
-        }, 500);
-    }
+        setTimeout(() => {alert(`Проблема с доступом к микрофону:\n\n${errorMessage}`);
+    }, 500);
+}
 }
 
 // Запуск приложения
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("Запуск Звукового светофора...");
-    
-    try {
-        window.soundMonitor = new SoundMonitor();
-        console.log("Звуковой светофор успешно запущен");
-        
-        // Автоматическая калибровка при запуске
-        setTimeout(() => {
-            window.soundMonitor.calibrateForMicrophone();
-        }, 1000);
-        
-    } catch (error) {
-        console.error('Ошибка при запуске:', error);
-    }
+console.log("Запуск Звукового светофора...");
+
+try {
+    window.soundMonitor = new SoundMonitor();
+    console.log("Звуковой светофор успешно запущен");
+} catch (error) {
+    console.error('Ошибка при запуске:', error);
+}
 });
