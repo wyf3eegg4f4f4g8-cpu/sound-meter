@@ -7,12 +7,12 @@ class SoundMonitor {
         this.animationId = null;
         this.dataArray = null;
         this.volumeHistory = [];
-        this.historySize = 15;
+        this.historySize = 10; // Уменьшил для меньшего сглаживания
         
-        // Более мягкая калибровка
+        // Правильная калибровка для реалистичных значений
         this.calibration = {
-            offset: 25,      // Вернули нормальное значение
-            multiplier: 1.2, // Небольшой множитель
+            offset: 45,      // Увеличил для более высоких значений
+            multiplier: 1.0, // Без лишнего умножения
             minDB: 0,
             maxDB: 100
         };
@@ -50,8 +50,8 @@ class SoundMonitor {
             
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
+                    echoCancellation: false,  // Выключил для более точного измерения
+                    noiseSuppression: false,  // Выключил шумоподавление
                     autoGainControl: false,
                     sampleRate: 44100,
                     channelCount: 1
@@ -63,11 +63,11 @@ class SoundMonitor {
             
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             
-            // Стандартные настройки для стабильной работы
+            // Оптимальные настройки для баланса точности и плавности
             this.analyser = this.audioContext.createAnalyser();
-            this.analyser.fftSize = 1024;
-            this.analyser.smoothingTimeConstant = 0.8; // Хорошее сглаживание
-            this.analyser.minDecibels = -45;
+            this.analyser.fftSize = 2048;
+            this.analyser.smoothingTimeConstant = 0.6; // Хороший баланс
+            this.analyser.minDecibels = -60;
             this.analyser.maxDecibels = -10;
             
             this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
@@ -119,21 +119,21 @@ class SoundMonitor {
         if (!this.isMonitoring) return;
 
         try {
-            // Используем частотные данные для стабильности
             this.analyser.getByteFrequencyData(this.dataArray);
-            // Простое и надежное вычисление средней громкости
-            const average = this.calculateSimpleAverage(this.dataArray);
             
-            // Аккуратное преобразование в dB
-            const db = this.convertToStableDB(average);
+            // Улучшенное вычисление с акцентом на речевые частоты
+            const average = this.calculateSpeechFocusedAverage(this.dataArray);
             
-            // Сглаживание для плавности
+            // Правильное преобразование с увеличенными значениями
+            const db = this.convertToRealisticDB(average);
+            
+            // Сглаживание для устранения резкости
             this.volumeHistory.push(db);
             if (this.volumeHistory.length > this.historySize) {
                 this.volumeHistory.shift();
             }
             
-            const smoothedDB = this.getSimpleAverage();
+            const smoothedDB = this.getSmoothedValue();
             this.updateVolumeDisplay(smoothedDB);
             
             this.animationId = requestAnimationFrame(() => this.monitorVolume());
@@ -144,22 +144,31 @@ class SoundMonitor {
         }
     }
 
-    calculateSimpleAverage(data) {
+    calculateSpeechFocusedAverage(data) {
         let sum = 0;
-        for (let i = 0; i < data.length; i++) {
+        let count = 0;
+        
+        // Фокусируемся на средних частотах (речевой диапазон 300-3400 Гц)
+        // Это дает более реалистичные значения для голоса
+        const start = Math.floor(data.length * 0.1);  // 10% - начало речевых частот
+        const end = Math.floor(data.length * 0.7);    // 70% - конец речевых частот
+        
+        for (let i = start; i < end; i++) {
             sum += data[i];
+            count++;
         }
-        return sum / data.length;
+        
+        return count > 0 ? sum / count : 0;
     }
 
-    convertToStableDB(value) {
+    convertToRealisticDB(value) {
         if (value < 1) return 0;
         
-        // Простая и стабильная формула
-        let db = 20 * Math.log10(value / 255);
+        // Увеличенная формула для более высоких значений
+        let db = 25 * Math.log10(value / 255); // Увеличил множитель
         
-        // Мягкая калибровка
-        db = db + 85 + this.calibration.offset;
+        // Большее смещение для реалистичных значений
+        db = db + 100 + this.calibration.offset;
         
         // Ограничение и округление
         db = Math.max(0, Math.min(100, db));
@@ -167,21 +176,22 @@ class SoundMonitor {
         return Math.round(db);
     }
 
-    getSimpleAverage() {
+    getSmoothedValue() {
         if (this.volumeHistory.length === 0) return 0;
         
-        let sum = 0;
-        for (let i = 0; i < this.volumeHistory.length; i++) {
-            sum += this.volumeHistory[i];
-        }
+        // Медианный фильтр для устранения резких скачков
+        const sorted = [...this.volumeHistory].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
         
-        return Math.round(sum / this.volumeHistory.length);
+        return sorted.length % 2 !== 0 ? 
+            sorted[mid] : 
+            Math.round((sorted[mid - 1] + sorted[mid]) / 2);
     }
 
     updateVolumeDisplay(db) {
         this.volumeValue.textContent = db;
         
-        // Правильные уровни громкости
+        // Теперь значения должны быть реалистичными:
         if (db >= 70) {
             this.setIndicatorState('red', `КРАЙНЕ ШУМНО`, "Крайне шумно", db);
         } else if (db >= 50) {
@@ -223,23 +233,23 @@ class SoundMonitor {
             case 'NotAllowedError':
                 errorMessage = 'Доступ к микрофону запрещен. Разрешите доступ в настройках браузера.';
                 break;
-            case 'NotFoundError':
-                errorMessage = 'Микрофон не найден. Убедитесь, что микрофон подключен и включен.';
-                break;
-            case 'NotSupportedError':
-                errorMessage = 'Ваш браузер не поддерживает доступ к микрофону.';
-                break;
-            case 'NotReadableError':
-                errorMessage = 'Микрофон используется другой программой. Закройте другие программы, использующие микрофон.';
-                break;
-            default:
-                errorMessage = `Ошибка: ${error.message}`;
-        }
-        
-        this.statusText.textContent = `${errorMessage}`;
-        this.volumeIndicator.className = 'indicator-circle red';
-        
-        setTimeout(() => {alert(`Проблема с доступом к микрофону:\n\n${errorMessage}`);
+            case 'NotFoundError':errorMessage = 'Микрофон не найден. Убедитесь, что микрофон подключен и включен.';
+            break;
+        case 'NotSupportedError':
+            errorMessage = 'Ваш браузер не поддерживает доступ к микрофону.';
+            break;
+        case 'NotReadableError':
+            errorMessage = 'Микрофон используется другой программой. Закройте другие программы, использующие микрофон.';
+            break;
+        default:
+            errorMessage = `Ошибка: ${error.message}`;
+    }
+    
+    this.statusText.textContent = `${errorMessage}`;
+    this.volumeIndicator.className = 'indicator-circle red';
+    
+    setTimeout(() => {
+        alert(`Проблема с доступом к микрофону:\n\n${errorMessage}`);
     }, 500);
 }
 }
