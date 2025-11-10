@@ -7,15 +7,7 @@ class SoundMonitor {
         this.animationId = null;
         this.dataArray = null;
         this.volumeHistory = [];
-        this.historySize = 10; // Уменьшил для меньшего сглаживания
-        
-        // Правильная калибровка для реалистичных значений
-        this.calibration = {
-            offset: 45,      // Увеличил для более высоких значений
-            multiplier: 1.0, // Без лишнего умножения
-            minDB: 0,
-            maxDB: 100
-        };
+        this.historySize = 20;
         
         console.log("Инициализация звукового светофора...");
         
@@ -50,8 +42,8 @@ class SoundMonitor {
             
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
-                    echoCancellation: false,  // Выключил для более точного измерения
-                    noiseSuppression: false,  // Выключил шумоподавление
+                    echoCancellation: false,
+                    noiseSuppression: false,
                     autoGainControl: false,
                     sampleRate: 44100,
                     channelCount: 1
@@ -63,14 +55,11 @@ class SoundMonitor {
             
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             
-            // Оптимальные настройки для баланса точности и плавности
             this.analyser = this.audioContext.createAnalyser();
-            this.analyser.fftSize = 2048;
-            this.analyser.smoothingTimeConstant = 0.6; // Хороший баланс
-            this.analyser.minDecibels = -60;
-            this.analyser.maxDecibels = -10;
+            this.analyser.fftSize = 1024;
+            this.analyser.smoothingTimeConstant = 0.8;
             
-            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+            this.dataArray = new Float32Array(this.analyser.fftSize);
             
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             this.microphone.connect(this.analyser);
@@ -119,79 +108,63 @@ class SoundMonitor {
         if (!this.isMonitoring) return;
 
         try {
-            this.analyser.getByteFrequencyData(this.dataArray);
+            this.analyser.getFloatTimeDomainData(this.dataArray);
             
-            // Улучшенное вычисление с акцентом на речевые частоты
-            const average = this.calculateSpeechFocusedAverage(this.dataArray);
+            const rms = this.calculateRMS(this.dataArray);
+            const db = this.rmsToDB(rms);
             
-            // Правильное преобразование с увеличенными значениями
-            const db = this.convertToRealisticDB(average);
-            
-            // Сглаживание для устранения резкости
             this.volumeHistory.push(db);
             if (this.volumeHistory.length > this.historySize) {
                 this.volumeHistory.shift();
             }
             
-            const smoothedDB = this.getSmoothedValue();
+            const smoothedDB = this.getSmoothedVolume();
             this.updateVolumeDisplay(smoothedDB);
             
             this.animationId = requestAnimationFrame(() => this.monitorVolume());
-            
-        } catch (error) {
+        } catch(error) {
             console.error('Ошибка в цикле мониторинга:', error);
             this.stopMonitoring();
         }
     }
 
-    calculateSpeechFocusedAverage(data) {
+    calculateRMS(data) {
         let sum = 0;
-        let count = 0;
-        
-        // Фокусируемся на средних частотах (речевой диапазон 300-3400 Гц)
-        // Это дает более реалистичные значения для голоса
-        const start = Math.floor(data.length * 0.1);  // 10% - начало речевых частот
-        const end = Math.floor(data.length * 0.7);    // 70% - конец речевых частот
-        
-        for (let i = start; i < end; i++) {
-            sum += data[i];
-            count++;
+        for (let i = 0; i < data.length; i++) {
+            sum += data[i] * data[i];
         }
-        
-        return count > 0 ? sum / count : 0;
+        return Math.sqrt(sum / data.length);
     }
 
-    convertToRealisticDB(value) {
-        if (value < 1) return 0;
+    rmsToDB(rms) {
+        if (rms < 0.00001) return 0;
         
-        // Увеличенная формула для более высоких значений
-        let db = 25 * Math.log10(value / 255); // Увеличил множитель
-        
-        // Большее смещение для реалистичных значений
-        db = db + 100 + this.calibration.offset;
-        
-        // Ограничение и округление
+        let db = 15 * Math.log10(rms * 100);
+        db = db + 40;
         db = Math.max(0, Math.min(100, db));
         
         return Math.round(db);
     }
 
-    getSmoothedValue() {
+    getSmoothedVolume() {
         if (this.volumeHistory.length === 0) return 0;
         
-        // Медианный фильтр для устранения резких скачков
-        const sorted = [...this.volumeHistory].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
+        let sum = 0;
+        let weightSum = 0;
         
-        return sorted.length % 2 !== 0 ? 
-            sorted[mid] : 
-            Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+        for (let i = 0; i < this.volumeHistory.length; i++) {
+            const weight = (i + 1) / this.volumeHistory.length;
+            sum += this.volumeHistory[i] * weight;
+            weightSum += weight;
+        }
+        
+        return Math.round(sum / weightSum);
     }
 
     updateVolumeDisplay(db) {
         this.volumeValue.textContent = db;
         
-        // Теперь значения должны быть реалистичными:
+        // Обновленные уровни громкости по новым требованиям
         if (db >= 70) {
             this.setIndicatorState('red', `КРАЙНЕ ШУМНО`, "Крайне шумно", db);
         } else if (db >= 50) {
@@ -204,7 +177,6 @@ class SoundMonitor {
             this.setIndicatorState('purple', `ОЧЕНЬ ТИХО`, "Очень тихо", db);
         }
     }
-
     setIndicatorState(color, text, level, db) {
         this.volumeIndicator.className = `indicator-circle ${color}`;
         this.statusText.textContent = `${text}: ${db} dB`;
@@ -233,35 +205,37 @@ class SoundMonitor {
             case 'NotAllowedError':
                 errorMessage = 'Доступ к микрофону запрещен. Разрешите доступ в настройках браузера.';
                 break;
-            case 'NotFoundError':errorMessage = 'Микрофон не найден. Убедитесь, что микрофон подключен и включен.';
-            break;
-        case 'NotSupportedError':
-            errorMessage = 'Ваш браузер не поддерживает доступ к микрофону.';
-            break;
-        case 'NotReadableError':
-            errorMessage = 'Микрофон используется другой программой. Закройте другие программы, использующие микрофон.';
-            break;
-        default:
-            errorMessage = `Ошибка: ${error.message}`;
+            case 'NotFoundError':
+                errorMessage = 'Микрофон не найден. Убедитесь, что микрофон подключен и включен.';
+                break;
+            case 'NotSupportedError':
+                errorMessage = 'Ваш браузер не поддерживает доступ к микрофону.';
+                break;
+            case 'NotReadableError':
+                errorMessage = 'Микрофон используется другой программой. Закройте другие программы, использующие микрофон.';
+                break;
+            default:
+                errorMessage = `Ошибка: ${error.message}`;
+        }
+        
+        this.statusText.textContent = `${errorMessage}`;
+        this.volumeIndicator.className = 'indicator-circle red';
+        
+        setTimeout(() => {
+            alert(`Проблема с доступом к микрофону:\n\n${errorMessage}`);
+        }, 500);
     }
-    
-    this.statusText.textContent = `${errorMessage}`;
-    this.volumeIndicator.className = 'indicator-circle red';
-    
-    setTimeout(() => {
-        alert(`Проблема с доступом к микрофону:\n\n${errorMessage}`);
-    }, 500);
-}
 }
 
 // Запуск приложения
 document.addEventListener('DOMContentLoaded', () => {
-console.log("Запуск Звукового светофора...");
-
-try {
-    window.soundMonitor = new SoundMonitor();
-    console.log("Звуковой светофор успешно запущен");
-} catch (error) {
-    console.error('Ошибка при запуске:', error);
-}
+    console.log("Запуск Звукового светофора...");
+    
+    try {
+        window.soundMonitor = new SoundMonitor();
+        console.log("Звуковой светофор успешно запущен");
+    } catch (error) {
+        console.error('Ошибка при запуске:', error);
+    }
 });
+        
