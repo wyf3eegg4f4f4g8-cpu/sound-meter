@@ -7,7 +7,14 @@ class SoundMonitor {
         this.animationId = null;
         this.dataArray = null;
         this.volumeHistory = [];
-        this.historySize = 20;
+        this.historySize = 15;
+        
+        this.calibration = {
+            offset: 30,      // Увеличено для смещения в нужный диапазон
+            multiplier: 1.5, // Настроено для правильных значений
+            minDB: 0,        // Минимальный уровень - 0 dB
+            maxDB: 100       // Максимальный уровень
+        };
         
         console.log("Инициализация звукового светофора...");
         
